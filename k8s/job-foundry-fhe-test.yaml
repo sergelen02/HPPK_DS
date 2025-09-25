@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata: { name: foundry-fhe-test, namespace: blockchain }
+spec:
+template:
+spec:
+restartPolicy: Never
+containers:
+- name: forge
+image: ghcr.io/foundry-rs/foundry:latest
+workingDir: /work/solidity
+env:
+- { name: RPC_URL, value: "http://geth-rpc.blockchain.svc.cluster.local:8545" }
+command: ["bash","-lc"]
+args:
+- |
+forge install foundry-rs/forge-std --no-commit || true
+forge test -vvvv --gas-report --fork-url $RPC_URL | tee /results/fhe-gas-report.txt
+volumeMounts:
+- { name: src, mountPath: /work }
+- { name: results, mountPath: /results }
+volumes:
+- name: src
+hostPath: { path: /PATH/TO/hppk-phaseA, type: Directory }
+- name: results
+emptyDir: {}

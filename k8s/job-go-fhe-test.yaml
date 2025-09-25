@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata: { name: go-fhe-test, namespace: blockchain }
+spec:
+template:
+spec:
+restartPolicy: Never
+containers:
+- name: go-test
+image: golang:1.22
+workingDir: /work/go
+command: ["bash","-lc"]
+args:
+- |
+go mod tidy && go test ./... -run TestHomomorphicAddMul -v | tee /results/go-fhe-test.log
+volumeMounts:
+- { name: src, mountPath: /work }
+- { name: results, mountPath: /results }
+volumes:
+- name: src
+# 실전에서는 Git clone initContainer나 코드 포함 이미지를 권장
+hostPath: { path: /PATH/TO/hppk-phaseA, type: Directory }
+- name: results
+emptyDir: {}
