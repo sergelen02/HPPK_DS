@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: geth, namespace: blockchain, labels: { app: geth } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: geth } }
+  template:
+    metadata: { labels: { app: geth } }
+    spec:
+      containers:
+      - name: geth
+        image: <ACR_NAME>/hppk-geth:phaseA
+        args: ["--dev","--http","--http.addr=0.0.0.0","--http.api=eth,net,web3,engine","--metrics","--pprof","--pprof.addr=0.0.0.0","--pprof.port=6060"]
+        ports:
+          - {containerPort: 8545, name: rpc}
+          - {containerPort: 6060, name: metrics}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: geth-rpc, namespace: blockchain, labels: { app: geth } }
+spec:
+  selector: { app: geth }
+  ports:
+    - { name: rpc, port: 8545, targetPort: rpc }
+    - { name: metrics, port: 6060, targetPort: metrics }
+  type: ClusterIP

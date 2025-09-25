@@ -1,0 +1,12 @@
+# k8s/geth-servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: geth-metrics, namespace: monitoring }
+spec:
+  selector: { matchLabels: { app: geth } }
+  namespaceSelector: { matchNames: ["blockchain"] }
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /debug/metrics
+      params: { prometheus: ["1"] }
