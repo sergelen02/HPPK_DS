@@ -1,6 +1,9 @@
 package ds
 
-import "math/big"
+import (
+	"crypto/sha256"
+	"math/big"
+)
 
 // (a + b) mod m
 func addMod(a, b, m *big.Int) *big.Int {
@@ -72,12 +75,12 @@ func invMod(a, m *big.Int) *big.Int {
 }
 
 func hashToX(P *big.Int, msg []byte) *big.Int {
-    h := sha256.Sum256(msg)
-    x := new(big.Int).SetBytes(h[:])
-    x.Mod(x, P)
-    if x.Sign() == 0 {
-        x.SetInt64(1)
-    }
+	h := sha256.Sum256(msg)
+	x := new(big.Int).SetBytes(h[:])
+	x.Mod(x, P)
+	if x.Sign() == 0 {
+		x.SetInt64(1)
+	}
 
-	  return x
+	return x
 }

@@ -37,7 +37,3 @@ func Verify(pp *Params, pk *PublicKey, msg []byte, sig *Signature) bool {
 	}
 	return LHS.Cmp(RHS) == 0
 }
-
-func hashToX(int *big.Int, msg []byte) any {
-	panic("unimplemented")
-}
