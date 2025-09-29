@@ -52,7 +52,7 @@ func powModInt(a *big.Int, e int, m *big.Int) *big.Int {
 
 // Barrett-like floor: floor( x * mu / R )  where R = 2^K
 // 주의: 여기서는 R(=2^K) 자체를 인자로 받아 정확히 사용합니다.
-func barrettFloor(x, mu, R *big.Int, K int) *big.Int {
+func barrettFloor(x, mu, R *big.Int, _ int) *big.Int {
 	var t big.Int
 	t.Mul(x, mu)
 	// R = 2^K 라면 Div(&t, R) 와 동일하지만, 기존 코드 유지 의도면 그대로 둠
@@ -67,11 +67,6 @@ func ModInverseOrErr(a, m *big.Int) (*big.Int, error) {
 		return nil, ErrNoInverse
 	}
 	return inv, nil
-}
-
-// invMod: 역원이 없으면 nil 반환
-func invMod(a, m *big.Int) *big.Int {
-	return new(big.Int).ModInverse(a, m)
 }
 
 func hashToX(P *big.Int, msg []byte) *big.Int {

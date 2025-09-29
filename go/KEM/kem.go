@@ -42,4 +42,3 @@ func (a *NoopAdapter) Decaps(sk *SecretKey, ct *Ciphertext) ([]byte, error) {
 	ss := sha256.Sum256(ct.raw)
 	return ss[:], nil
 }
-EOF
