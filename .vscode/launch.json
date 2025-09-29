@@ -9,7 +9,8 @@
   
     { "name": "keygen", "type": "go", "request": "launch", "mode": "auto", "program": "${workspaceFolder}/cmd/keygen" },
     { "name": "sign",   "type": "go", "request": "launch", "mode": "auto", "program": "${workspaceFolder}/cmd/sign" },
-    { "name": "verify", "type": "go", "request": "launch", "mode": "auto", "program": "${workspaceFolder}/cmd/verify" }
+    { "name": "verify", "type": "go", "request": "launch", "mode": "auto", "program": "${workspaceFolder}/cmd/verify" },
+    { "name": "fhe_test", "type": "go", "request": "launch", "mode": "auto", "program": "${workspaceFolder}/go/fhe"}
   ]
 }
 

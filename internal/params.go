@@ -5,14 +5,23 @@ import "math/big"
 type Params struct {
 	P *big.Int // prime modulus
 	K int      // Barrett exponent; R=2^K
+	N int      // P,Q 계수 길이
+    Seed []byte// 테스트 재현용
 }
 
-func DefaultParams() *Params {
-	// 데모 값(실험 시 교체 가능)
-	p := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 64), big.NewInt(59)) // 2^64-59
-	return &Params{P: p, K: 208}
+func FromPaper() *Params {
+    return &Params{
+        P:    mustBig("FFFFFFFFFFFFFFC5", 16), // 예시(논문값으로 교체)
+        K:    208,
+        N:    2,
+        Seed: mustHex("c0ffee00c0ffee00c0ffee00c0ffee00"),
+    }
 }
 
-func (pp *Params) R() *big.Int {
-	return new(big.Int).Lsh(big.NewInt(1), uint(pp.K))
+func mustHex(s string) {
+	panic("unimplemented")
+}
+
+func mustBig(s string, i int) {
+	panic("unimplemented")
 }

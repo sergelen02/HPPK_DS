@@ -6,7 +6,7 @@ type noopAdapter struct{}
 
 func NewNoopAdapter() Adapter { return &noopAdapter{} }
 
-func (n *noopAdapter) KeyGen() (*SecKey, *PubKey, error) {
+func (n *noopAdapter) KeyGen() (*SecretKey, *PublicKey, error) {
 	return &SecKey{}, &PubKey{}, nil
 }
 
@@ -17,7 +17,7 @@ func (n *noopAdapter) Enc(pk *PubKey, m int) (*Ciphertext, error) {
 	return &Ciphertext{v: m}, nil
 }
 
-func (n *noopAdapter) Dec(sk *SecKey, ct *Ciphertext) (int, error) {
+func (n *noopAdapter) Dec(sk *SecretKey, ct *Ciphertext) (int, error) {
 	if sk == nil || ct == nil {
 		return 0, errors.New("nil arg")
 	}

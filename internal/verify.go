@@ -38,6 +38,10 @@ func Verify(pp *Params, pk *PublicKey, msg []byte, sig *Signature) bool {
 	return LHS.Cmp(RHS) == 0
 }
 
+func powModInt(x any, i int, int *big.Int) any {
+	panic("unimplemented")
+}
+
 func hashToX(int *big.Int, msg []byte) any {
 	panic("unimplemented")
 }
