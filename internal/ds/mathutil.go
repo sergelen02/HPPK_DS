@@ -1,81 +1,97 @@
 package ds
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"io"
 	"math/big"
 )
 
-// (a + b) mod m
-func addMod(a, b, m *big.Int) *big.Int {
-	var t big.Int
-	t.Add(a, b)
-	t.Mod(&t, m)
-	// Mod 결과는 0..m-1 범위라 음수 보정은 불필요하지만, 안전을 위해 유지해도 무방
-	if t.Sign() < 0 {
-		t.Add(&t, m)
+// ---- mod 연산 ----
+func modAdd(a, b, p *big.Int) *big.Int {
+	z := new(big.Int).Add(a, b); z.Mod(z, p)
+	if z.Sign() < 0 { z.Add(z, p) }
+	return z
+}
+func modSub(a, b, p *big.Int) *big.Int {
+	z := new(big.Int).Sub(a, b); z.Mod(z, p)
+	if z.Sign() < 0 { z.Add(z, p) }
+	return z
+}
+func modMul(a, b, p *big.Int) *big.Int {
+	z := new(big.Int).Mul(a, b); z.Mod(z, p)
+	if z.Sign() < 0 { z.Add(z, p) }
+	return z
+}
+
+// ---- 인덱스/거듭제곱 캐시 ----
+func idxIJ(i, j, M int) int { return i*M + j }
+
+func powCache(x *big.Int, N int, p *big.Int) []*big.Int {
+	out := make([]*big.Int, N+1)
+	out[0] = new(big.Int).SetInt64(1)
+	for i := 1; i <= N; i++ {
+		out[i] = new(big.Int).Mul(out[i-1], x)
+		out[i].Mod(out[i], p)
 	}
-	return new(big.Int).Set(&t)
+	return out
 }
 
-// (a - b) mod m
-func subMod(a, b, m *big.Int) *big.Int {
-	var t big.Int
-	t.Sub(a, b)
-	t.Mod(&t, m)
-	if t.Sign() < 0 {
-		t.Add(&t, m)
-	}
-	return new(big.Int).Set(&t)
-}
-
-// (a * b) mod m
-func mulMod(a, b, m *big.Int) *big.Int {
-	var t big.Int
-	t.Mul(a, b)
-	t.Mod(&t, m)
-	return new(big.Int).Set(&t)
-}
-
-// a^e mod m  (e: int >= 0)
-// a^e mod m  (e: int >= 0)
-func powModInt(a *big.Int, e int, m *big.Int) *big.Int {
-	if e < 0 {
-		// 필요 시 역원 처리로 확장 가능
-		return big.NewInt(0)
-	}
-	var ee big.Int
-	ee.SetInt64(int64(e))
-	var out big.Int
-	out.Exp(a, &ee, m)
-	return new(big.Int).Set(&out)
-}
-
-// Barrett-like floor: floor( x * mu / R )  where R = 2^K
-// 주의: 여기서는 R(=2^K) 자체를 인자로 받아 정확히 사용합니다.
-func barrettFloor(x, mu, R *big.Int, _ int) *big.Int {
-	var t big.Int
-	t.Mul(x, mu)
-	// R = 2^K 라면 Div(&t, R) 와 동일하지만, 기존 코드 유지 의도면 그대로 둠
-	t.Div(&t, R)
-	return new(big.Int).Set(&t)
-}
-
-// 역원 유틸 (필요 시 사용)
-func ModInverseOrErr(a, m *big.Int) (*big.Int, error) {
-	inv := new(big.Int).ModInverse(a, m)
-	if inv == nil {
-		return nil, ErrNoInverse
-	}
-	return inv, nil
-}
-
-func hashToX(P *big.Int, msg []byte) *big.Int {
-	h := sha256.Sum256(msg)
-	x := new(big.Int).SetBytes(h[:])
-	x.Mod(x, P)
-	if x.Sign() == 0 {
-		x.SetInt64(1)
-	}
-
+// ---- hash→field & u-도출 ----
+func hashToX(p *big.Int, msg []byte) *big.Int {
+	sum := sha256.Sum256(msg)
+	x := new(big.Int).SetBytes(sum[:])
+	x.Mod(x, p)
+	if x.Sign() < 0 { x.Add(x, p) }
 	return x
+}
+func deriveNoises(p, x *big.Int, m int) []*big.Int {
+	out := make([]*big.Int, m)
+	xb := x.Bytes()
+	for j := 0; j < m; j++ {
+		h := sha256.Sum256(append(xb, byte(j+1)))
+		u := new(big.Int).SetBytes(h[:])
+		u.Mod(u, p)
+		if u.Sign() == 0 { u.SetInt64(1) }
+		out[j] = u
+	}
+	return out
+}
+
+// ---- 난수 ----
+func randZp(p *big.Int) (*big.Int, error) {
+	for {
+		z, err := rand.Int(rand.Reader, p)
+		if err != nil { return nil, err }
+		if z.Sign() != 0 { return z, nil }
+	}
+}
+func randOddLbits(L int) (*big.Int, error) {
+	bytes := (L + 7) / 8
+	buf := make([]byte, bytes)
+	if _, err := io.ReadFull(rand.Reader, buf); err != nil { return nil, err }
+	buf[0] |= 0x80              // 상위비트
+	buf[len(buf)-1] |= 0x01     // 홀수
+	return new(big.Int).SetBytes(buf), nil
+}
+func randCoprimePair(L int) (*big.Int, *big.Int, error) {
+	for {
+		S, err := randOddLbits(L); if err != nil { return nil, nil, err }
+		R, err := randOddLbits(L); if err != nil { return nil, nil, err }
+		if new(big.Int).GCD(nil, nil, R, S).Cmp(big.NewInt(1)) == 0 {
+			return R, S, nil
+		}
+	}
+}
+
+// ---- 다항 평가 ----
+func evalPoly(coeffs []*big.Int, x, p *big.Int) *big.Int {
+	acc := new(big.Int).SetInt64(0)
+	pow := new(big.Int).SetInt64(1)
+	for i := 0; i < len(coeffs); i++ {
+		term := modMul(coeffs[i], pow, p)
+		acc = modAdd(acc, term, p)
+		pow.Mul(pow, x).Mod(pow, p)
+	}
+	return acc
 }

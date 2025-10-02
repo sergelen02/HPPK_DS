@@ -2,38 +2,56 @@ package ds
 
 import "math/big"
 
-// Sum_i U_i(H) x^i == Sum_i V_i(F) x^i (mod P)
-func Verify(pp *Params, pk *PublicKey, msg []byte, sig *Signature) bool {
-	n := len(pk.Pprime)
-	if n == 0 || n != len(pk.Qprime) || n != len(pk.Mu) || n != len(pk.Nu) {
+// Verify: Barrett 전개 Uij(H), Vij(F)로 ΣΣ 비교 (mod p)
+// Uij(H) = H*p'_{ij} - s1 * floor(H*μ_{ij} / R)   (mod p)
+// Vij(F) = F*q'_{ij} - s2 * floor(F*ν_{ij} / R)   (mod p)
+func Verify(pp *Params, pk *PublicKey, sig *Signature, msg []byte) bool {
+	if pp == nil || pk == nil || sig == nil || pp.P == nil || pp.R == nil {
 		return false
 	}
+	p := pp.P
+	K := uint(pp.K)
 
-	// 메시지로부터 x 한 번 계산
-	x := hashToX(pp.P, msg)
-	R := pp.R()
+	// x, deterministic u_j from x (검증 결정성)
+	x := hashToX(p, msg)
+	u := deriveNoises(p, x, pk.M)
 
-	LHS := big.NewInt(0)
-	RHS := big.NewInt(0)
+	// x^i 캐시
+	xp := powCache(x, pk.N, p)
 
-	for i := 0; i < n; i++ {
-		// U_i(H) = H*p'_i - s1*floor(H*μ_i/R)
-		t1 := mulMod(sig.H, pk.Pprime[i], pp.P)
-		floorU := barrettFloor(sig.H, pk.Mu[i], R, int(pp.K)) // 4-인자 버전 (x, mu, R, K)
-		t2 := mulMod(pk.S1p, floorU, pp.P)
-		Ui := subMod(t1, t2, pp.P)
+	left := new(big.Int)  // ΣΣ V(F)*x^i*u_j
+	right := new(big.Int) // ΣΣ U(H)*x^i*u_j
 
-		// V_i(F) = F*q'_i - s2*floor(F*ν_i/R)
-		s1 := mulMod(sig.F, pk.Qprime[i], pp.P)
-		floorV := barrettFloor(sig.F, pk.Nu[i], R, int(pp.K))
-		s2 := mulMod(pk.S2p, floorV, pp.P)
-		Vi := subMod(s1, s2, pp.P)
+	for i := 0; i <= pk.N; i++ {
+		for j := 0; j < pk.M; j++ {
+			k := idxIJ(i, j, pk.M)
 
-		// xi = x^i mod P
-		xi := powModInt(x, i, pp.P) // 또는 expMod(x, i, pp.P)
+			// floor((F*muQ)/R) == (F*muQ) >> K
+			tL := new(big.Int).Mul(sig.F, pk.MuQ[k])
+			tL.Rsh(tL, K) // >>K
+			// coefL = F*q' - s2*floor(...)
+			coefL := modMul(sig.F, pk.Qprime[k], p)
+			coefL = modSub(coefL, modMul(pk.S2p, tL, p), p)
 
-		LHS = addMod(LHS, mulMod(Ui, xi, pp.P), pp.P)
-		RHS = addMod(RHS, mulMod(Vi, xi, pp.P), pp.P)
+			// floor((H*muP)/R)
+			tR := new(big.Int).Mul(sig.H, pk.MuP[k])
+			tR.Rsh(tR, K)
+			// coefR = H*p' - s1*floor(...)
+			coefR := modMul(sig.H, pk.Pprime[k], p)
+			coefR = modSub(coefR, modMul(pk.S1p, tR, p), p)
+
+			// accumulate
+			termL := modMul(coefL, xp[i], p)
+			termL = modMul(termL, u[j], p)
+			left = modAdd(left, termL, p)
+
+			termR := modMul(coefR, xp[i], p)
+			termR = modMul(termR, u[j], p)
+			right = modAdd(right, termR, p)
+		}
 	}
-	return LHS.Cmp(RHS) == 0
+	// equal mod p ?
+	left.Mod(left, p)
+	right.Mod(right, p)
+	return left.Cmp(right) == 0
 }

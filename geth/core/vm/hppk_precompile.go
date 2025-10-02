@@ -8,33 +8,39 @@ import (
 	ds "github.com/sergelen02/HPPK_DS/internal/ds"
 )
 
+// RLP 입력 포맷(한 번에 검증까지 수행)
+// N: x의 최고지수(실제 항은 0..N → N+1개), M: u 변숫개수
+// 1차원 평탄화 규칙: idx = i*M + j  (i in [0..N], j in [0..M-1])
 type VerifyInput struct {
 	Msg    []byte
 	SigF   []byte
 	SigH   []byte
-	Pprime [][]byte
-	Qprime [][]byte
-	Mu     [][]byte
-	Nu     [][]byte
-	S1p    []byte
-	S2p    []byte
+
+	// 각 항목 길이 == (N+1)*M  이어야 함
+	Pprime [][]byte // p'_{ij} = β·P_{ij} mod p
+	Qprime [][]byte // q'_{ij} = β·Q_{ij} mod p
+	MuP    [][]byte // μ_{ij} = floor(R·P_{ij}/S1)
+	MuQ    [][]byte // ν_{ij} = floor(R·Q_{ij}/S2)
+
+	S1p []byte      // s1 = β·S1 mod p
+	S2p []byte      // s2 = β·S2 mod p
+	N   uint32      // 다항 차수(확장 후) 상한
+	M   uint32      // u 변수 개수
 }
 
-type HPPKPrecompile struct{ PP *ds.Params }
+type HPPKPrecompile struct{ PP *ds.Params } // PP에는 p, K, R(=1<<K) 포함
 
-// go-ethereum/core/vm.PrecompiledContract 요구사항: Name 도 구현
 func (pc *HPPKPrecompile) Name() string { return "HPPKVerify" }
 
-// 입력 사이즈에 선형인 결정적 가스 모델(대략치). 필요시 실측치로 조정.
+// 입력 길이에 선형인 보수적 가스 모델(실측 후 재보정 권장)
 func (pc *HPPKPrecompile) RequiredGas(input []byte) uint64 {
-	// base + per-byte + per-item 가중치 (RLP 오버헤드 포함 보수적 추정)
 	const base = 5_000
 	const perByte = 15
 	return base + uint64(len(input))*perByte
 }
 
 func (pc *HPPKPrecompile) Run(input []byte) ([]byte, error) {
-	if pc.PP == nil || pc.PP.P == nil {
+	if pc.PP == nil || pc.PP.P == nil || pc.PP.R == nil {
 		return []byte{0}, errors.New("params not initialized")
 	}
 	var in VerifyInput
@@ -42,50 +48,62 @@ func (pc *HPPKPrecompile) Run(input []byte) ([]byte, error) {
 		return []byte{0}, err
 	}
 
-	// 길이 정합성 체크
-	n := len(in.Pprime)
-	if n == 0 || n != len(in.Qprime) || n != len(in.Mu) || n != len(in.Nu) {
-		return []byte{0}, errors.New("length mismatch among Pprime/Qprime/Mu/Nu")
+	// 차원/길이 검증
+	if in.M == 0 {
+		return []byte{0}, errors.New("M must be > 0")
+	}
+	if in.N == 0 && len(in.Pprime) == 0 {
+		return []byte{0}, errors.New("invalid N and empty arrays")
+	}
+	expect := int((in.N + 1) * in.M)
+	if expect != len(in.Pprime) ||
+		expect != len(in.Qprime) ||
+		expect != len(in.MuP) ||
+		expect != len(in.MuQ) {
+		return []byte{0}, errors.New("length mismatch: arrays must be (N+1)*M")
 	}
 
-	// 공개키 구성(미리할당 + 인덱스 대입)
-	pk := &ds.PublicKey{
-		S1p:    new(big.Int).SetBytes(in.S1p),
-		S2p:    new(big.Int).SetBytes(in.S2p),
-		Pprime: make([]*big.Int, n),
-		Qprime: make([]*big.Int, n),
-		Mu:     make([]*big.Int, n),
-		Nu:     make([]*big.Int, n),
-	}
-	// 모듈러 정규화 helper
-	mod := pc.PP.P
-	modNorm := func(z *big.Int) *big.Int {
-		if z == nil {
-			return new(big.Int)
-		}
-		z.Mod(z, mod)
+	p := pc.PP.P
+	modNorm := func(b []byte) *big.Int {
+		z := new(big.Int).SetBytes(b)
+		z.Mod(z, p)
 		if z.Sign() < 0 {
-			z.Add(z, mod)
+			z.Add(z, p)
 		}
 		return z
 	}
 
-	for i := 0; i < n; i++ {
-		pk.Pprime[i] = modNorm(new(big.Int).SetBytes(in.Pprime[i]))
-		pk.Qprime[i] = modNorm(new(big.Int).SetBytes(in.Qprime[i]))
-		pk.Mu[i] = modNorm(new(big.Int).SetBytes(in.Mu[i]))
-		pk.Nu[i] = modNorm(new(big.Int).SetBytes(in.Nu[i]))
+	// 공개키 구성
+	pk := &ds.PublicKey{
+		S1p:    modNorm(in.S1p),
+		S2p:    modNorm(in.S2p),
+		Pprime: make([]*big.Int, expect),
+		Qprime: make([]*big.Int, expect),
+		MuP:    make([]*big.Int, expect),
+		MuQ:    make([]*big.Int, expect),
+		N:      int(in.N),
+		M:      int(in.M),
+		// Lambda는 검증에서 직접 쓰지 않으므로 0으로 둬도 무방
 	}
-	pk.S1p = modNorm(pk.S1p)
-	pk.S2p = modNorm(pk.S2p)
 
+	for i := 0; i < expect; i++ {
+		pk.Pprime[i] = modNorm(in.Pprime[i])
+		pk.Qprime[i] = modNorm(in.Qprime[i])
+		// 주의: μ/ν는 mod p가 아니라 정수(shift 전 피제수)이지만,
+		// DS 구현에서 floor((F*μ)/R)를 바로 >>K로 쓰므로 p로 줄이지 않아도 동작함.
+		// 다만 안전히 big.Int로 받아두고, Verify 내부에서 곱/쉬프트에만 사용.
+		pk.MuP[i] = new(big.Int).SetBytes(in.MuP[i])
+		pk.MuQ[i] = new(big.Int).SetBytes(in.MuQ[i])
+	}
+
+	// 서명
 	sig := &ds.Signature{
-		F: modNorm(new(big.Int).SetBytes(in.SigF)),
-		H: modNorm(new(big.Int).SetBytes(in.SigH)),
+		F: modNorm(in.SigF),
+		H: modNorm(in.SigH),
 	}
 
-	ok := ds.Verify(pc.PP, pk, in.Msg, sig)
-	if ok {
+	// 검증 호출(순서: pp, pk, sig, msg)
+	if ds.Verify(pc.PP, pk, sig, in.Msg) {
 		return []byte{1}, nil
 	}
 	return []byte{0}, nil

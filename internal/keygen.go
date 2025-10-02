@@ -1,93 +1,96 @@
 package ds
 
 import (
-	"crypto/rand"
+	"errors"
 	"math/big"
 )
 
-// 샘플러들 (실험용)
-func randMod(m *big.Int) *big.Int {
-	x, _ := rand.Int(rand.Reader, m)
-	if x.Sign() < 0 {
-		x.Add(x, m)
+// KeyGen(pp, n, m, lambda) → (*SecretKey, *PublicKey, error)
+// (아래 헬퍼: randCoprimePair, randZp, modAdd/Sub/Mul, idxIJ 등은 mathutil.go에 있어야 함)
+func KeyGen(pp *Params, n, m, lambda int) (*SecretKey, *PublicKey, error) {
+	if pp == nil || pp.P == nil || pp.R == nil {
+		return nil, nil, errors.New("nil params")
 	}
-	return x
-}
-func coprime(a, b *big.Int) bool {
-	g := new(big.Int).GCD(nil, nil, a, b)
-	return g.Cmp(big.NewInt(1)) == 0
-}
+	if lambda < 1 { lambda = 1 }
+	if n < 1 { n = 1 }
+	if m < 1 { m = 1 }
+	N := n + lambda
 
-// Placeholder: 공개다항 P(x),Q(x) 계수(길이 n)를 외부에서 공급하거나 여기서 생성
-func makePQ(n int, p *big.Int) (P, Q []*big.Int) {
-	P = make([]*big.Int, n)
-	Q = make([]*big.Int, n)
-	for i := 0; i < n; i++ {
-		P[i] = randMod(p)
-		Q[i] = randMod(p)
+	// (R1,S1),(R2,S2)
+	R1, S1, err := randCoprimePair(pp.L)
+	if err != nil { return nil, nil, err }
+	R2, S2, err := randCoprimePair(pp.L)
+	if err != nil { return nil, nil, err }
+
+	// f(x), h(x)
+	fc := make([]*big.Int, lambda+1)
+	hc := make([]*big.Int, lambda+1)
+	for i := 0; i <= lambda; i++ {
+		if fc[i], err = randZp(pp.P); err != nil { return nil, nil, err }
+		if hc[i], err = randZp(pp.P); err != nil { return nil, nil, err }
 	}
-	return
-}
 
-// Barrett 상수 μ,ν 계산(스켈레톤): 실제론 P,Q, S1,S2에 맞춘 전처리 필요
-func computeMuNu(pp *Params, P, Q []*big.Int) (mu, nu []*big.Int) {
-	n := len(P)
-	mu = make([]*big.Int, n)
-	nu = make([]*big.Int, n)
-	R := pp.R()
-	for i := 0; i < n; i++ {
-		mu[i] = new(big.Int).Rsh(R, 2)
-		nu[i] = new(big.Int).Rsh(R, 3)
-	} // TODO: 실제 값으로 교체
-	return
-}
-
-// Algorithm 4: DS KeyGen → (SK, PK)
-func KeyGen(pp *Params, n int) (*SecretKey, *PublicKey) {
-	p := pp.P
-	// 1) f(x), h(x) 계수
-	f0, f1 := randMod(p), randMod(p)
-	h0, h1 := randMod(p), randMod(p)
-	// 2) (R1,S1),(R2,S2), gcd=1
-	var R1, S1, R2, S2 *big.Int
-	for {
-		R1, S1 = randMod(p), randMod(p)
-		if S1.Sign() == 0 {
-			S1 = big.NewInt(1)
+	// p_{ij}, q_{ij}
+	pcoef := make([]*big.Int, (N+1)*m)
+	qcoef := make([]*big.Int, (N+1)*m)
+	for j := 0; j < m; j++ {
+		b := make([]*big.Int, n+1)
+		for t := 0; t <= n; t++ {
+			if b[t], err = randZp(pp.P); err != nil { return nil, nil, err }
 		}
-		if coprime(R1, S1) {
-			break
+		for i := 0; i <= N; i++ {
+			accP := new(big.Int)
+			accQ := new(big.Int)
+			for t := 0; t <= i; t++ {
+				if t <= lambda && (i-t) <= n {
+					accP = modAdd(accP, modMul(fc[t], b[i-t], pp.P), pp.P)
+					accQ = modAdd(accQ, modMul(hc[t], b[i-t], pp.P), pp.P)
+				}
+			}
+			pcoef[idxIJ(i, j, m)] = accP
+			qcoef[idxIJ(i, j, m)] = accQ
 		}
 	}
-	for {
-		R2, S2 = randMod(p), randMod(p)
-		if S2.Sign() == 0 {
-			S2 = big.NewInt(1)
-		}
-		if coprime(R2, S2) {
-			break
+
+	// 암호 다항식 Pij, Qij
+	Pij := make([]*big.Int, (N+1)*m)
+	Qij := make([]*big.Int, (N+1)*m)
+	for i := 0; i <= N; i++ {
+		for j := 0; j < m; j++ {
+			idx := idxIJ(i, j, m)
+			Pij[idx] = new(big.Int).Mul(R1, pcoef[idx]); Pij[idx].Mod(Pij[idx], S1)
+			Qij[idx] = new(big.Int).Mul(R2, qcoef[idx]); Qij[idx].Mod(Qij[idx], S2)
 		}
 	}
-	// 3) β
-	beta := randMod(p)
 
-	// 공개다항 P,Q 계수
-	Pc, Qc := makePQ(n, p)
+	// Barrett 공개 전개
+	R := pp.R
+	MuP := make([]*big.Int, (N+1)*m)
+	MuQ := make([]*big.Int, (N+1)*m)
+	Pprime := make([]*big.Int, (N+1)*m)
+	Qprime := make([]*big.Int, (N+1)*m)
 
-	// Barrett 계수 μ,ν
-	mu, nu := computeMuNu(pp, Pc, Qc)
+	beta, err := randZp(pp.P)
+	if err != nil { return nil, nil, err }
+	S1p := new(big.Int).Mul(beta, S1); S1p.Mod(S1p, pp.P)
+	S2p := new(big.Int).Mul(beta, S2); S2p.Mod(S2p, pp.P)
 
-	// p′ = β·P, q′ = β·Q, s1 = β·S1, s2 = β·S2  (mod p)
-	pprime := make([]*big.Int, n)
-	qprime := make([]*big.Int, n)
-	for i := 0; i < n; i++ {
-		pprime[i] = mulMod(beta, Pc[i], p)
-		qprime[i] = mulMod(beta, Qc[i], p)
+	for idx := 0; idx < (N+1)*m; idx++ {
+		tmp := new(big.Int).Mul(R, Pij[idx]); MuP[idx] = new(big.Int).Div(tmp, S1)
+		tmp2 := new(big.Int).Mul(R, Qij[idx]); MuQ[idx] = new(big.Int).Div(tmp2, S2)
+		Pprime[idx] = new(big.Int).Mul(beta, Pij[idx]); Pprime[idx].Mod(Pprime[idx], pp.P)
+		Qprime[idx] = new(big.Int).Mul(beta, Qij[idx]); Qprime[idx].Mod(Qprime[idx], pp.P)
 	}
-	s1p := mulMod(beta, S1, p)
-	s2p := mulMod(beta, S2, p)
 
-	sk := &SecretKey{F0: f0, F1: f1, H0: h0, H1: h1, R1: R1, S1: S1, R2: R2, S2: S2, Beta: beta}
-	pk := &PublicKey{Pprime: pprime, Qprime: qprime, Mu: mu, Nu: nu, S1p: s1p, S2p: s2p}
-	return sk, pk
+	sk := &SecretKey{
+		R1: R1, S1: S1, R2: R2, S2: S2,
+		FCoeffs: fc, HCoeffs: hc, Lambda: lambda,
+	}
+	pk := &PublicKey{
+		S1p: S1p, S2p: S2p,
+		Pprime: Pprime, Qprime: Qprime,
+		MuP: MuP, MuQ: MuQ,
+		N: N, M: m, Lambda: lambda,
+	}
+	return sk, pk, nil
 }
