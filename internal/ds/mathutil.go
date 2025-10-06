@@ -7,7 +7,6 @@ import (
 	"math/big"
 )
 
-// ---- mod 연산 ----
 func modAdd(a, b, p *big.Int) *big.Int {
 	z := new(big.Int).Add(a, b); z.Mod(z, p)
 	if z.Sign() < 0 { z.Add(z, p) }
@@ -24,7 +23,6 @@ func modMul(a, b, p *big.Int) *big.Int {
 	return z
 }
 
-// ---- 인덱스/거듭제곱 캐시 ----
 func idxIJ(i, j, M int) int { return i*M + j }
 
 func powCache(x *big.Int, N int, p *big.Int) []*big.Int {
@@ -37,7 +35,6 @@ func powCache(x *big.Int, N int, p *big.Int) []*big.Int {
 	return out
 }
 
-// ---- hash→field & u-도출 ----
 func hashToX(p *big.Int, msg []byte) *big.Int {
 	sum := sha256.Sum256(msg)
 	x := new(big.Int).SetBytes(sum[:])
@@ -45,6 +42,7 @@ func hashToX(p *big.Int, msg []byte) *big.Int {
 	if x.Sign() < 0 { x.Add(x, p) }
 	return x
 }
+
 func deriveNoises(p, x *big.Int, m int) []*big.Int {
 	out := make([]*big.Int, m)
 	xb := x.Bytes()
@@ -58,7 +56,6 @@ func deriveNoises(p, x *big.Int, m int) []*big.Int {
 	return out
 }
 
-// ---- 난수 ----
 func randZp(p *big.Int) (*big.Int, error) {
 	for {
 		z, err := rand.Int(rand.Reader, p)
@@ -70,8 +67,8 @@ func randOddLbits(L int) (*big.Int, error) {
 	bytes := (L + 7) / 8
 	buf := make([]byte, bytes)
 	if _, err := io.ReadFull(rand.Reader, buf); err != nil { return nil, err }
-	buf[0] |= 0x80              // 상위비트
-	buf[len(buf)-1] |= 0x01     // 홀수
+	buf[0] |= 0x80
+	buf[len(buf)-1] |= 1
 	return new(big.Int).SetBytes(buf), nil
 }
 func randCoprimePair(L int) (*big.Int, *big.Int, error) {
@@ -84,7 +81,6 @@ func randCoprimePair(L int) (*big.Int, *big.Int, error) {
 	}
 }
 
-// ---- 다항 평가 ----
 func evalPoly(coeffs []*big.Int, x, p *big.Int) *big.Int {
 	acc := new(big.Int).SetInt64(0)
 	pow := new(big.Int).SetInt64(1)

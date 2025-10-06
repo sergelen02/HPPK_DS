@@ -1,34 +1,29 @@
 package main
 
 import (
-	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/sergelen02/HPPK_DS/internal/ds"
 )
 
 func main() {
+	// 단순화를 위해 여기선 다시 KeyGen; 파일에서 읽고 싶으면 out/*.json을 파싱하세요.
 	pp := ds.DefaultParams()
+	sk, _, err := ds.KeyGen(pp, 2, 1, 1)
+	if err != nil { log.Fatal(err) }
 
-	// n=2, m=1, lambda=1 예시
-	sk, pk, err := ds.KeyGen(pp, 2, 1, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	msg := []byte("hello")
-
-	// Sign은 (sig, x, err) 반환 → x는 안 쓰면 _로 무시
+	msg := []byte("hello-HPPK_DS")
 	sig, _, err := ds.Sign(pp, sk, msg)
-	if err != nil {
-		log.Fatal(err)
-	}
+	if err != nil { log.Fatal(err) }
 
-	fmt.Println("sig.F:", hex.EncodeToString(sig.F.Bytes()))
-	fmt.Println("sig.H:", hex.EncodeToString(sig.H.Bytes()))
+	_ = os.MkdirAll("out", 0o755)
+	f, err := os.Create("out/sig.json"); if err != nil { log.Fatal(err) }
+	defer f.Close()
+	enc := json.NewEncoder(f); enc.SetIndent("", "  ")
+	_ = enc.Encode(sig)
 
-	// 검증까지 확인
-	ok := ds.Verify(pp, pk, sig, msg)
-	fmt.Println("verify:", ok) // true 기대
+	fmt.Println("wrote out/sig.json")
 }

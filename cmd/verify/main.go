@@ -1,7 +1,7 @@
-ppackage main
+// cmd/verify/main.go
+package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"log"
 
@@ -10,27 +10,14 @@ import (
 
 func main() {
 	pp := ds.DefaultParams()
-
-	// KeyGen(pp, n, m, lambda) → (*SecretKey, *PublicKey, error)
-	sk, pk, err := ds.KeyGen(pp, 2, 1, 1) // 예: n=2, m=1, λ=1
-	if err != nil {
-		log.Fatal(err)
-	}
+    pp.WithK(208) // 필요하면 K 조정 (예: 208), 최소 L+32 이상으로 자동 보정됨
+	sk, pk, err := ds.KeyGen(pp, 2, 1, 1)
+	if err != nil { log.Fatal(err) }
 
 	msg := []byte("hello-HPPK_DS")
-
-	// Sign(pp, sk, msg) → (*Signature, x, error)
 	sig, _, err := ds.Sign(pp, sk, msg)
-	if err != nil {
-		log.Fatal(err)
-	}
+	if err != nil { log.Fatal(err) }
 
-	// Verify(pp, pk, sig, msg)  ← 인자 순서 주의!
 	ok := ds.Verify(pp, pk, sig, msg)
 	fmt.Println("verify:", ok)
-
-	// 디버깅용 출력
-	fmt.Println("F:", hex.EncodeToString(sig.F.Bytes()))
-	fmt.Println("H:", hex.EncodeToString(sig.H.Bytes()))
 }
-
