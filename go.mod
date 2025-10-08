@@ -4,8 +4,6 @@ go 1.24.0
 
 toolchain go1.24.5
 
-replace github.com/sergelen02/HPPK_DS => .
-
 require github.com/ethereum/go-ethereum v1.16.4
 
 require (

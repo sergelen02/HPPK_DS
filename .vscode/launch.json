@@ -1,23 +1,17 @@
 {
   "version": "0.2.0",
   "configurations": [
-    // ---- 모듈 모드: vendor 무시 (-mod=mod) ----
-    {
-      "name": "e2e (mod)",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/cmd/e2e",
-      "env": { "GOFLAGS": "-mod=mod" },
-      "internalConsoleOptions": "openOnSessionStart"
-    },
+    // ==== 공통: vendor 무시, CWD를 루트로 고정 ====
     {
       "name": "keygen (mod)",
       "type": "go",
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/keygen",
-      "env": { "GOFLAGS": "-mod=mod" }
+      "cwd": "${workspaceFolder}",
+      "args": ["-out", "artifacts"],
+      "env": { "GOFLAGS": "-mod=mod" },
+      "internalConsoleOptions": "openOnSessionStart"
     },
     {
       "name": "sign (mod)",
@@ -25,6 +19,13 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/sign",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-sk", "artifacts/sk.json",
+        "-in", "${workspaceFolder}/msg.txt",
+        "-sig", "artifacts/sig.json",
+        "-out", "artifacts"
+      ],
       "env": { "GOFLAGS": "-mod=mod" }
     },
     {
@@ -33,16 +34,30 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/verify",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-pk", "artifacts/pk.json",
+        "-in", "${workspaceFolder}/msg.txt",
+        "-sig", "artifacts/sig.json",
+        "-params", "artifacts/params.json"
+      ],
       "env": { "GOFLAGS": "-mod=mod" }
     },
 
-    // ---- KEM 디버깅 (있다면) ----
+    // ==== KEM 디버깅 ====
     {
       "name": "kem-encaps (mod)",
       "type": "go",
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/kem/encaps",
+      "cwd": "${workspaceFolder}",
+      "args": [
+  "-pk","artifacts/pk.json",
+  "-ct","ct.bin",
+  "-ss","ss.enc.bin",
+  "-out","artifacts"
+      ],
       "env": { "GOFLAGS": "-mod=mod" }
     },
     {
@@ -51,11 +66,37 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/kem/decaps",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-sk", "artifacts/sk.json",
+        "-ct", "artifacts/ct.bin",
+        "-ss", "artifacts/ss.dec.bin",
+        "-out", "artifacts"
+      ],
       "env": { "GOFLAGS": "-mod=mod" }
+    },
+
+    // ==== (선택) e2e 러너가 실제로 있을 때만 사용하세요 ====
+    // cmd/e2e 가 없으면 이 항목은 제거하세요.
+    {
+      "name": "e2e (mod)",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/e2e",
+      "cwd": "${workspaceFolder}",
+      "env": { "GOFLAGS": "-mod=mod" },
+      "internalConsoleOptions": "openOnSessionStart"
     }
   ],
+
   "compounds": [
-    // 병렬 실행이 필요하면 사용 (순차 실행은 아님)
-    { "name": "sign+verify (mod)", "configurations": ["sign (mod)", "verify (mod)"] }
+    // ⚠️ 컴파운드는 '동시에' 실행됩니다(순차 아님).
+    // 순차 실행이 필요하면 e2e 바이너리에서 orchestration 하세요.
+    {
+      "name": "sign+verify (mod)",
+      "configurations": ["sign (mod)", "verify (mod)"],
+      "stopAll": true
+    }
   ]
 }
