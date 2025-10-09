@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sergelen02/HPPK_DS/cmd/common/iohelper"
+	io "github.com/sergelen02/HPPK_DS/internal/iohelper"
 	"github.com/sergelen02/HPPK_DS/internal/ds"
 )
 

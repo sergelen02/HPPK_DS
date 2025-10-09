@@ -1,0 +1,19 @@
+== go vet ==
+
+== go build packages ==
+# building github.com/sergelen02/HPPK_DS/cmd/common/io
+# building github.com/sergelen02/HPPK_DS/cmd/common/iohelper
+# building github.com/sergelen02/HPPK_DS/cmd/e2e
+# building github.com/sergelen02/HPPK_DS/cmd/kem/decaps
+# building github.com/sergelen02/HPPK_DS/cmd/kem/encaps
+# building github.com/sergelen02/HPPK_DS/cmd/keygen
+# building github.com/sergelen02/HPPK_DS/cmd/sign
+# building github.com/sergelen02/HPPK_DS/cmd/verify
+# building github.com/sergelen02/HPPK_DS/geth/core/vm
+# building github.com/sergelen02/HPPK_DS/go/KEM
+# building github.com/sergelen02/HPPK_DS/go/KEM/HPPK
+# building github.com/sergelen02/HPPK_DS/go/fhe
+# building github.com/sergelen02/HPPK_DS/internal
+# building github.com/sergelen02/HPPK_DS/internal/ds
+# building github.com/sergelen02/HPPK_DS/internal/iohelper
+# building github.com/sergelen02/HPPK_DS/internal/kem

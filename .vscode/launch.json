@@ -1,6 +1,17 @@
 {
   "version": "0.2.0",
   "configurations": [
+  {
+    "name": "Launch test function",
+    "type": "go",
+    "request": "launch",
+    "mode": "test",
+    "program": "${workspaceFolder}",
+    "args": [
+      "-test.run",
+      "MyTestFunction"
+    ]
+  },
     // ==== 공통: vendor 무시, CWD를 루트로 고정 ====
     {
       "name": "keygen (mod)",
@@ -95,7 +106,10 @@
     // 순차 실행이 필요하면 e2e 바이너리에서 orchestration 하세요.
     {
       "name": "sign+verify (mod)",
-      "configurations": ["sign (mod)", "verify (mod)"],
+      "configurations": [
+        "sign (mod)",
+        "verify (mod)"
+      ],
       "stopAll": true
     }
   ]
