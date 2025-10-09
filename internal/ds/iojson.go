@@ -2,19 +2,23 @@
 package ds
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
-	"reflect"
 )
 
 // ---- 공통 유틸 ----
 
 func readJSONFile(path string, v any) error {
 	f, err := os.Open(path)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer f.Close()
 	dec := json.NewDecoder(f)
 	dec.UseNumber()
@@ -54,7 +58,9 @@ func toBigIntSlice(x any) ([]*big.Int, error) {
 	out := make([]*big.Int, 0, len(arr))
 	for _, e := range arr {
 		b, err := toBigInt(e)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, b)
 	}
 	return out, nil
@@ -94,32 +100,51 @@ func toInt(x any) (int, error) {
 type paramsWire map[string]any
 
 func LoadParams(path string) (*Params, error) {
+	if path == "" {
+		return DefaultParams(), nil
+	}
+
 	var raw paramsWire
 	if err := readJSONFile(path, &raw); err != nil {
 		return nil, err
 	}
 
-	p := DefaultParams() // 기본값으로 시작
-	// 개별 필드가 있으면 덮어씀
+	if ok, pp, err := tryLoadGobParams(raw); ok {
+		if err != nil {
+			return nil, err
+		}
+		return normalizeParams(pp)
+	}
+
+	p := DefaultParams()
+
 	if v, ok := raw["P"]; ok {
-		b, err := toBigInt(v); if err != nil { return nil, err }
+		b, err := toBigInt(v)
+		if err != nil {
+			return nil, err
+		}
 		p.P = b
 	}
-	if v, ok := raw["R"]; ok {
-		b, err := toBigInt(v); if err != nil { return nil, err }
-		p.R = b
-	}
+
 	if v, ok := raw["L"]; ok {
-		i, err := toInt(v); if err != nil { return nil, err }
-		p.L = i
+		i, err := toInt(v)
+		if err != nil {
+			return nil, err
+		}
+		if i > p.L {
+			p.L = i
+		}
 	}
+
 	if v, ok := raw["K"]; ok {
-		i, err := toInt(v); if err != nil { return nil, err }
-		// WithK가 있다면 메서드 사용, 아니면 직접 대입
-		// p = p.WithK(i)
+		i, err := toInt(v)
+		if err != nil {
+			return nil, err
+		}
 		p.K = i
 	}
-	return p, nil
+
+	return normalizeParams(p)
 }
 
 // ---- PublicKey ----
@@ -147,47 +172,82 @@ func LoadPublicKey(path string) (*PublicKey, error) {
 	if err := readJSONFile(path, &raw); err != nil {
 		return nil, err
 	}
+
+	if ok, pk, err := tryLoadGobPublicKey(raw); ok {
+		if err != nil {
+			return nil, err
+		}
+		return pk, nil
+	}
+
 	var pk PublicKey
 
 	// big scalars
 	if v, ok := raw["S1p"]; ok {
-		b, err := toBigInt(v); if err != nil { return nil, err }
+		b, err := toBigInt(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.S1p = b
 	}
 	if v, ok := raw["S2p"]; ok {
-		b, err := toBigInt(v); if err != nil { return nil, err }
+		b, err := toBigInt(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.S2p = b
 	}
 
 	// big arrays
 	if v, ok := raw["Pprime"]; ok {
-		arr, err := toBigIntSlice(v); if err != nil { return nil, err }
+		arr, err := toBigIntSlice(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.Pprime = arr
 	}
 	if v, ok := raw["Qprime"]; ok {
-		arr, err := toBigIntSlice(v); if err != nil { return nil, err }
+		arr, err := toBigIntSlice(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.Qprime = arr
 	}
 	if v, ok := raw["MuP"]; ok {
-		arr, err := toBigIntSlice(v); if err != nil { return nil, err }
+		arr, err := toBigIntSlice(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.MuP = arr
 	}
 	if v, ok := raw["MuQ"]; ok {
-		arr, err := toBigIntSlice(v); if err != nil { return nil, err }
+		arr, err := toBigIntSlice(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.MuQ = arr
 	}
 
 	// ints
 	if v, ok := raw["N"]; ok {
-		i, err := toInt(v); if err != nil { return nil, err }
+		i, err := toInt(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.N = i
 	}
 	if v, ok := raw["M"]; ok {
-		i, err := toInt(v); if err != nil { return nil, err }
+		i, err := toInt(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.M = i
 	}
 	if v, ok := raw["Lambda"]; ok {
-		i, err := toInt(v); if err != nil { return nil, err }
+		i, err := toInt(v)
+		if err != nil {
+			return nil, err
+		}
 		pk.Lambda = i
 	}
 
@@ -196,82 +256,129 @@ func LoadPublicKey(path string) (*PublicKey, error) {
 
 // ---- Signature ----
 //
-// 서명의 JSON 스키마는 레포마다 다릅니다.
-// 아래는 흔한 예시 2가지 중 자동 감지:
-//  A) { "F": [..2..], "H":[..2..], "Lambda": 1 }
-//  B) { "F": <num>, "H": <num>, "Lambda": 1 }
-//
-// ds.Signature 구조가 다음 필드를 가진다고 가정합니다:
-//   F []*big.Int 또는 *big.Int
-//   H []*big.Int 또는 *big.Int
-//   Lambda int
-// 프로젝트 실제 구조와 다르면 필드명/형 맞춰서 수정하세요.
+// 현재 구현은 서명을 {"F": <num>, "H": <num>} 또는 각 항이 1개뿐인 배열로 저장한
+// JSON을 지원한다. 배열이 비어있거나 두 개 이상인 경우는 오류로 처리한다.
 
 type sigWire map[string]any
 
 func LoadSignature(path string) (*Signature, error) {
-	// 먼저 원시 map으로 읽고, 필드 존재를 보고 분기
 	var raw sigWire
 	if err := readJSONFile(path, &raw); err != nil {
 		return nil, err
 	}
 
-	var sig Signature
+	sig := &Signature{}
 
-	// Lambda
-	if v, ok := raw["Lambda"]; ok {
-		i, err := toInt(v); if err != nil { return nil, err }
-		setField(&sig, "Lambda", i)
+	fVal, ok := raw["F"]
+	if !ok {
+		return nil, errors.New("signature: missing F field")
 	}
-
-	// F
-	if v, ok := raw["F"]; ok {
-		switch reflect.TypeOf(v).Kind() {
-		case reflect.Slice:
-			arr, err := toBigIntSlice(v); if err != nil { return nil, err }
-			if err := setField(&sig, "F", arr); err != nil { return nil, err }
-		default:
-			b, err := toBigInt(v); if err != nil { return nil, err }
-			if err := setField(&sig, "F", b); err != nil { return nil, err }
-		}
+	fBig, err := firstBigInt(fVal)
+	if err != nil {
+		return nil, fmt.Errorf("signature: invalid F: %w", err)
 	}
+	sig.F = fBig
 
-	// H
-	if v, ok := raw["H"]; ok {
-		switch reflect.TypeOf(v).Kind() {
-		case reflect.Slice:
-			arr, err := toBigIntSlice(v); if err != nil { return nil, err }
-			if err := setField(&sig, "H", arr); err != nil { return nil, err }
-		default:
-			b, err := toBigInt(v); if err != nil { return nil, err }
-			if err := setField(&sig, "H", b); err != nil { return nil, err }
-		}
+	hVal, ok := raw["H"]
+	if !ok {
+		return nil, errors.New("signature: missing H field")
 	}
+	hBig, err := firstBigInt(hVal)
+	if err != nil {
+		return nil, fmt.Errorf("signature: invalid H: %w", err)
+	}
+	sig.H = hBig
 
-	return &sig, nil
+	return sig, nil
 }
 
-// setField는 ds.Signature의 필드가 포인터/슬라이스/스칼라 어떤 형태든
-// 이름으로 세팅을 시도합니다. (필드명이 다르면 아래를 맞추세요)
-func setField(target any, name string, value any) error {
-	v := reflect.ValueOf(target)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return errors.New("setField: target must be non-nil pointer")
+func firstBigInt(v any) (*big.Int, error) {
+	switch t := v.(type) {
+	case []any:
+		if len(t) == 0 {
+			return nil, errors.New("empty array")
+		}
+		if len(t) > 1 {
+			return nil, fmt.Errorf("array length %d unsupported", len(t))
+		}
+		return toBigInt(t[0])
+	default:
+		return toBigInt(t)
 	}
-	v = v.Elem()
-	f := v.FieldByName(name)
-	if !f.IsValid() {
-		// 필드가 없으면 무시 대신 에러로 알림
-		return fmt.Errorf("setField: field %q not found on %T", name, target)
+}
+
+func loadGobBlob(raw map[string]any, target any) (bool, error) {
+	formatVal, ok := raw["format"]
+	if !ok {
+		return false, nil
 	}
-	if !f.CanSet() {
-		return fmt.Errorf("setField: field %q not settable", name)
+	format, ok := formatVal.(string)
+	if !ok || format != "gob-base64" {
+		return false, nil
 	}
-	val := reflect.ValueOf(value)
-	// 슬라이스<-슬라이스, 포인터<-포인터, 스칼라<-스칼라만 허용
-	if !val.Type().AssignableTo(f.Type()) {
-		return fmt.Errorf("setField: cannot assign %v to %v", val.Type(), f.Type())
+
+	blobVal, ok := raw["blob"]
+	if !ok {
+		return false, errors.New("gob-base64: missing blob field")
 	}
-	f.Set(val)
-	return nil
+	blobStr, ok := blobVal.(string)
+	if !ok {
+		return false, errors.New("gob-base64: blob must be string")
+	}
+
+	rawBytes, err := base64.StdEncoding.DecodeString(blobStr)
+	if err != nil {
+		return true, err
+	}
+	if err := gob.NewDecoder(bytes.NewReader(rawBytes)).Decode(target); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func tryLoadGobParams(raw paramsWire) (bool, *Params, error) {
+	var pp Params
+	matched, err := loadGobBlob(raw, &pp)
+	if !matched {
+		return false, nil, nil
+	}
+	if err != nil {
+		return true, nil, err
+	}
+	return true, &pp, nil
+}
+
+func tryLoadGobPublicKey(raw pkWire) (bool, *PublicKey, error) {
+	var pk PublicKey
+	matched, err := loadGobBlob(raw, &pk)
+	if !matched {
+		return false, nil, nil
+	}
+	if err != nil {
+		return true, nil, err
+	}
+	return true, &pk, nil
+}
+
+func normalizeParams(pp *Params) (*Params, error) {
+	if pp == nil || pp.P == nil {
+		return nil, errors.New("params: missing prime P")
+	}
+
+	norm := &Params{P: new(big.Int).Set(pp.P)}
+	l := norm.P.BitLen()
+	if pp.L > l {
+		l = pp.L
+	}
+	norm.L = l
+
+	k := pp.K
+	minK := norm.P.BitLen() + 32
+	if k < minK {
+		k = minK
+	}
+	norm.K = k
+	norm.R = new(big.Int).Lsh(big.NewInt(1), uint(norm.K))
+
+	return norm, nil
 }

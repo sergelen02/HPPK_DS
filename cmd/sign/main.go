@@ -25,7 +25,6 @@ func joinOut(out, p string) string {
 	return filepath.Join(out, p)
 }
 
-
 func mustWriteJSON(path string, v any) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		log.Fatal(err)
@@ -102,8 +101,8 @@ func main() {
 	}
 
 	// 로드 (모두 포인터여야 함)
-	pp := loadParams(*paramsPath)  // *ds.Params
-	sk := loadSecretKey(*skPath)   // *ds.SecretKey
+	pp := loadParams(*paramsPath) // *ds.Params
+	sk := loadSecretKey(*skPath)  // *ds.SecretKey
 	msg := mustReadFile(*inPath)
 
 	// 서명 (포인터 인자 필요)
@@ -112,17 +111,23 @@ func main() {
 		log.Fatal(err)
 	}
 	if *pkPath != "" {
-        f, err := os.Open(*pkPath); if err != nil { log.Fatal(err) }
-        defer f.Close()
-        var pk ds.PublicKey
-        if err := json.NewDecoder(f).Decode(&pk); err != nil { log.Fatal(err) }
-        ok := ds.Verify(pp, &pk, sig, msg)
-        fmt.Println("self-verify:", ok)
-    }
+		f, err := os.Open(*pkPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+
+		var pk ds.PublicKey
+		if err := json.NewDecoder(f).Decode(&pk); err != nil {
+			log.Fatal(err)
+		}
+
+		ok := ds.Verify(pp, &pk, sig, msg)
+		fmt.Println("self-verify:", ok)
+	}
 
 	// 저장
 	sigPath := joinOut(*outDir, *sigName)
 	mustWriteJSON(sigPath, sig)
 	fmt.Println("wrote", sigPath)
 }
-

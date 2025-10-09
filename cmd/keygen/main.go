@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sergelen02/HPPK_DS/cmd/common/iohelper"
+	iohelper "github.com/sergelen02/HPPK_DS/cmd/common/io"
 	"github.com/sergelen02/HPPK_DS/internal/ds"
 )
 
@@ -47,9 +47,15 @@ func main() {
 	skPath := joinOut(*outDir, "sk.json")
 	pkPath := joinOut(*outDir, "pk.json")
 
-	if err := io.SaveParams(paramsPath, pp); err != nil { log.Fatal(err) }
-	if err := io.SaveSecretKey(skPath, sk); err != nil { log.Fatal(err) }
-	if err := io.SavePublicKey(pkPath, pk); err != nil { log.Fatal(err) }
+	if err := iohelper.SaveParams(paramsPath, pp); err != nil {
+		log.Fatal(err)
+	}
+	if err := iohelper.SaveSecretKey(skPath, sk); err != nil {
+		log.Fatal(err)
+	}
+	if err := iohelper.SavePublicKey(pkPath, pk); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println("wrote", paramsPath+",", skPath+",", pkPath)
 }
